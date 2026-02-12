@@ -1,0 +1,25 @@
+{
+  "name": "gv-mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "gv-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:http": "node dist/http.js",
+    "dev": "tsx src/index.ts",
+    "dev:http": "tsx src/http.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@supabase/supabase-js": "^2.49.8",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "tsx": "^4.19.4",
+    "@types/node": "^22.15.0"
+  }
+}
