@@ -156,7 +156,18 @@ const httpServer = createHttpServer(async (req, res) => {
   // Health check
   if (url.pathname === '/health' || url.pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ status: 'ok', server: 'gv-gestao-a-vista', version: '1.0.0', sessions: sessions.size }))
+    res.end(JSON.stringify({
+      status: 'ok',
+      server: 'gv-gestao-a-vista',
+      version: '1.0.1',
+      sessions: sessions.size,
+      env: {
+        SUPABASE_URL: process.env.SUPABASE_URL ? 'set' : 'missing',
+        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'set' : 'missing',
+        MASTER_API_KEY: process.env.MASTER_API_KEY ? 'set' : 'missing',
+        PORT: process.env.PORT || 'default',
+      }
+    }))
     return
   }
 
