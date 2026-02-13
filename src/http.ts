@@ -166,6 +166,7 @@ const httpServer = createHttpServer(async (req, res) => {
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'set' : 'missing',
         MASTER_API_KEY: process.env.MASTER_API_KEY ? 'set' : 'missing',
         PORT: process.env.PORT || 'default',
+        supa_vars: Object.keys(process.env).filter(k => k.includes('SUPA')),
       }
     }))
     return
