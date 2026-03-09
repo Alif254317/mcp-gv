@@ -196,7 +196,787 @@ export function registerFiscalTools(server: McpServer, orgId: string | null) {
     }
   )
 
-  // ── Tool 3: Emitir NFe (produtos) ──
+  // ── Tool 3: Criar nota fiscal (rascunho) ──
+  server.tool(
+    'create_nota_fiscal',
+    'Cria uma nota fiscal em rascunho (NFe ou NFSe). O destinatário e os itens podem ser adicionados depois.',
+    {
+      tipo: z.enum(['nfe', 'nfse']).describe('Tipo: nfe (produtos) ou nfse (servicos)'),
+      destinatario_nome: z.string().describe('Nome/Razao social do destinatario'),
+      destinatario_cpf_cnpj: z.string().describe('CPF ou CNPJ do destinatario'),
+      destinatario_tipo: z.enum(['pessoa_fisica', 'pessoa_juridica', 'estrangeiro']).optional().default('pessoa_juridica'),
+      destinatario_email: z.string().optional().describe('Email do destinatario'),
+      destinatario_telefone: z.string().optional().describe('Telefone do destinatario'),
+      destinatario_cep: z.string().optional(),
+      destinatario_logradouro: z.string().optional(),
+      destinatario_numero: z.string().optional(),
+      destinatario_complemento: z.string().optional(),
+      destinatario_bairro: z.string().optional(),
+      destinatario_municipio: z.string().optional(),
+      destinatario_uf: z.string().optional(),
+      destinatario_codigo_municipio: z.string().optional(),
+      destinatario_ie: z.string().optional().describe('Inscricao Estadual do destinatario'),
+      cliente_id: z.string().optional().describe('ID do cliente vinculado'),
+      natureza_operacao: z.string().optional().default('Venda de mercadoria'),
+      informacoes_adicionais: z.string().optional(),
+      codigo_servico: z.string().optional().describe('Codigo do servico (NFSe)'),
+      discriminacao_servicos: z.string().optional().describe('Descricao dos servicos (NFSe)'),
+    },
+    async (params) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+
+      // Verificar config fiscal
+      const { data: config } = await supabase
+        .from('fiscal_config')
+        .select('id, nfe_habilitado, nfse_habilitado')
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!config) {
+        return { content: [{ type: 'text' as const, text: 'Configuração fiscal não encontrada. Configure pelo app web.' }] }
+      }
+
+      if (params.tipo === 'nfe' && !config.nfe_habilitado) {
+        return { content: [{ type: 'text' as const, text: 'NFe não está habilitada nas configurações' }] }
+      }
+      if (params.tipo === 'nfse' && !config.nfse_habilitado) {
+        return { content: [{ type: 'text' as const, text: 'NFSe não está habilitada nas configurações' }] }
+      }
+
+      const now = new Date().toISOString()
+
+      const notaData: Record<string, any> = {
+        organization_id: orgId,
+        tipo: params.tipo,
+        status: 'rascunho',
+        cliente_id: params.cliente_id || null,
+        destinatario_tipo: params.destinatario_tipo || 'pessoa_juridica',
+        destinatario_nome: params.destinatario_nome,
+        destinatario_cpf_cnpj: params.destinatario_cpf_cnpj.replace(/\D/g, ''),
+        destinatario_ie: params.destinatario_ie || null,
+        destinatario_email: params.destinatario_email || null,
+        destinatario_telefone: params.destinatario_telefone || null,
+        destinatario_cep: params.destinatario_cep || null,
+        destinatario_logradouro: params.destinatario_logradouro || null,
+        destinatario_numero: params.destinatario_numero || null,
+        destinatario_complemento: params.destinatario_complemento || null,
+        destinatario_bairro: params.destinatario_bairro || null,
+        destinatario_municipio: params.destinatario_municipio || null,
+        destinatario_uf: params.destinatario_uf || null,
+        destinatario_codigo_municipio: params.destinatario_codigo_municipio || null,
+        natureza_operacao: params.natureza_operacao || (params.tipo === 'nfe' ? 'Venda de mercadoria' : 'Prestacao de servico'),
+        finalidade: 'normal',
+        indicador_presenca: 'nao_se_aplica',
+        codigo_servico: params.codigo_servico || null,
+        discriminacao_servicos: params.discriminacao_servicos || null,
+        iss_retido: false,
+        informacoes_adicionais: params.informacoes_adicionais || null,
+        valor_produtos: 0,
+        valor_servicos: 0,
+        valor_desconto: 0,
+        valor_frete: 0,
+        valor_seguro: 0,
+        valor_outras_despesas: 0,
+        valor_total: 0,
+        valor_icms: 0,
+        valor_icms_st: 0,
+        valor_ipi: 0,
+        valor_pis: 0,
+        valor_cofins: 0,
+        valor_iss: 0,
+        valor_ir: 0,
+        valor_csll: 0,
+        valor_inss: 0,
+        created_at: now,
+        updated_at: now,
+      }
+
+      const { data: nota, error } = await supabase
+        .from('notas_fiscais')
+        .insert(notaData)
+        .select()
+        .single()
+
+      if (error) {
+        return { content: [{ type: 'text' as const, text: `Erro ao criar nota: ${error.message}` }] }
+      }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, nota }) }] }
+    }
+  )
+
+  // ── Tool 4: Atualizar nota fiscal (rascunho) ──
+  server.tool(
+    'update_nota_fiscal',
+    'Atualiza uma nota fiscal em rascunho. Permite alterar destinatário e campos gerais.',
+    {
+      id: z.string().describe('ID da nota fiscal'),
+      destinatario_nome: z.string().optional(),
+      destinatario_cpf_cnpj: z.string().optional(),
+      destinatario_tipo: z.enum(['pessoa_fisica', 'pessoa_juridica', 'estrangeiro']).optional(),
+      destinatario_email: z.string().optional(),
+      destinatario_telefone: z.string().optional(),
+      destinatario_cep: z.string().optional(),
+      destinatario_logradouro: z.string().optional(),
+      destinatario_numero: z.string().optional(),
+      destinatario_complemento: z.string().optional(),
+      destinatario_bairro: z.string().optional(),
+      destinatario_municipio: z.string().optional(),
+      destinatario_uf: z.string().optional(),
+      destinatario_codigo_municipio: z.string().optional(),
+      destinatario_ie: z.string().optional(),
+      natureza_operacao: z.string().optional(),
+      informacoes_adicionais: z.string().optional(),
+      codigo_servico: z.string().optional(),
+      discriminacao_servicos: z.string().optional(),
+      valor_desconto: z.number().optional(),
+    },
+    async (params) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+
+      // Verificar nota existe e é rascunho
+      const { data: existing } = await supabase
+        .from('notas_fiscais')
+        .select('id, status')
+        .eq('id', params.id)
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!existing) return { content: [{ type: 'text' as const, text: 'Nota fiscal não encontrada' }] }
+      if ((existing as any).status !== 'rascunho') {
+        return { content: [{ type: 'text' as const, text: 'Apenas rascunhos podem ser editados' }] }
+      }
+
+      const updateData: Record<string, any> = { updated_at: new Date().toISOString() }
+
+      if (params.destinatario_nome !== undefined) updateData.destinatario_nome = params.destinatario_nome
+      if (params.destinatario_cpf_cnpj !== undefined) updateData.destinatario_cpf_cnpj = params.destinatario_cpf_cnpj.replace(/\D/g, '')
+      if (params.destinatario_tipo !== undefined) updateData.destinatario_tipo = params.destinatario_tipo
+      if (params.destinatario_email !== undefined) updateData.destinatario_email = params.destinatario_email
+      if (params.destinatario_telefone !== undefined) updateData.destinatario_telefone = params.destinatario_telefone
+      if (params.destinatario_cep !== undefined) updateData.destinatario_cep = params.destinatario_cep
+      if (params.destinatario_logradouro !== undefined) updateData.destinatario_logradouro = params.destinatario_logradouro
+      if (params.destinatario_numero !== undefined) updateData.destinatario_numero = params.destinatario_numero
+      if (params.destinatario_complemento !== undefined) updateData.destinatario_complemento = params.destinatario_complemento
+      if (params.destinatario_bairro !== undefined) updateData.destinatario_bairro = params.destinatario_bairro
+      if (params.destinatario_municipio !== undefined) updateData.destinatario_municipio = params.destinatario_municipio
+      if (params.destinatario_uf !== undefined) updateData.destinatario_uf = params.destinatario_uf
+      if (params.destinatario_codigo_municipio !== undefined) updateData.destinatario_codigo_municipio = params.destinatario_codigo_municipio
+      if (params.destinatario_ie !== undefined) updateData.destinatario_ie = params.destinatario_ie
+      if (params.natureza_operacao !== undefined) updateData.natureza_operacao = params.natureza_operacao
+      if (params.informacoes_adicionais !== undefined) updateData.informacoes_adicionais = params.informacoes_adicionais
+      if (params.codigo_servico !== undefined) updateData.codigo_servico = params.codigo_servico
+      if (params.discriminacao_servicos !== undefined) updateData.discriminacao_servicos = params.discriminacao_servicos
+      if (params.valor_desconto !== undefined) updateData.valor_desconto = params.valor_desconto
+
+      const { data: nota, error } = await supabase
+        .from('notas_fiscais')
+        .update(updateData)
+        .eq('id', params.id)
+        .select()
+        .single()
+
+      if (error) return { content: [{ type: 'text' as const, text: `Erro ao atualizar: ${error.message}` }] }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, nota }) }] }
+    }
+  )
+
+  // ── Tool 5: Deletar nota fiscal (rascunho) ──
+  server.tool(
+    'delete_nota_fiscal',
+    'Deleta uma nota fiscal em rascunho. Notas emitidas não podem ser deletadas.',
+    {
+      id: z.string().describe('ID da nota fiscal'),
+    },
+    async ({ id }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+
+      const { data: existing } = await supabase
+        .from('notas_fiscais')
+        .select('id, status')
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!existing) return { content: [{ type: 'text' as const, text: 'Nota fiscal não encontrada' }] }
+      if ((existing as any).status !== 'rascunho') {
+        return { content: [{ type: 'text' as const, text: 'Apenas rascunhos podem ser excluídos' }] }
+      }
+
+      // Excluir itens primeiro
+      await supabase.from('notas_fiscais_itens').delete().eq('nota_fiscal_id', id)
+
+      const { error } = await supabase
+        .from('notas_fiscais')
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', orgId)
+
+      if (error) return { content: [{ type: 'text' as const, text: `Erro ao excluir: ${error.message}` }] }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true }) }] }
+    }
+  )
+
+  // ── Tool 6: Adicionar item a nota fiscal ──
+  server.tool(
+    'add_item_nota_fiscal',
+    'Adiciona um item a uma nota fiscal em rascunho e recalcula os totais.',
+    {
+      nota_fiscal_id: z.string().describe('ID da nota fiscal'),
+      descricao: z.string().describe('Descricao do item/servico'),
+      quantidade: z.number().min(0.01).describe('Quantidade'),
+      valor_unitario: z.number().min(0.01).describe('Valor unitario'),
+      ncm: z.string().optional().describe('Codigo NCM (para NFe)'),
+      cfop: z.string().optional().describe('CFOP (para NFe)'),
+      unidade: z.string().optional().default('UN').describe('Unidade (UN, KG, etc)'),
+      codigo_servico: z.string().optional().describe('Codigo do servico (para NFSe)'),
+      aliquota_iss: z.number().optional().describe('Aliquota ISS % (para NFSe)'),
+    },
+    async (params) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+
+      // Verificar nota
+      const { data: nota } = await supabase
+        .from('notas_fiscais')
+        .select('id, status, tipo')
+        .eq('id', params.nota_fiscal_id)
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!nota) return { content: [{ type: 'text' as const, text: 'Nota fiscal não encontrada' }] }
+      if ((nota as any).status !== 'rascunho') {
+        return { content: [{ type: 'text' as const, text: 'Apenas rascunhos podem receber itens' }] }
+      }
+
+      // Determinar próximo numero_item
+      const { data: itensExistentes } = await supabase
+        .from('notas_fiscais_itens')
+        .select('numero_item')
+        .eq('nota_fiscal_id', params.nota_fiscal_id)
+        .order('numero_item', { ascending: false })
+        .limit(1)
+
+      const proximoNumero = itensExistentes && itensExistentes.length > 0
+        ? (itensExistentes[0] as any).numero_item + 1
+        : 1
+
+      const valorTotal = params.quantidade * params.valor_unitario
+      const now = new Date().toISOString()
+      const tipo = (nota as any).tipo
+
+      const itemData: Record<string, any> = {
+        nota_fiscal_id: params.nota_fiscal_id,
+        numero_item: proximoNumero,
+        descricao: params.descricao,
+        quantidade: params.quantidade,
+        valor_unitario: params.valor_unitario,
+        valor_total: valorTotal,
+        valor_desconto: 0,
+        valor_frete: 0,
+        unidade: params.unidade || 'UN',
+        ncm: params.ncm || null,
+        cfop: params.cfop || (tipo === 'nfe' ? '5102' : null),
+        codigo_servico: params.codigo_servico || null,
+        aliquota_iss: params.aliquota_iss || 0,
+        valor_iss: params.aliquota_iss ? (valorTotal * params.aliquota_iss / 100) : 0,
+        icms_origem: 'nacional',
+        icms_cst: tipo === 'nfe' ? '102' : null,
+        icms_base_calculo: 0,
+        icms_aliquota: 0,
+        icms_valor: 0,
+        pis_cst: '99',
+        pis_base_calculo: 0,
+        pis_aliquota: 0,
+        pis_valor: 0,
+        cofins_cst: '99',
+        cofins_base_calculo: 0,
+        cofins_aliquota: 0,
+        cofins_valor: 0,
+        created_at: now,
+        updated_at: now,
+      }
+
+      const { data: item, error } = await supabase
+        .from('notas_fiscais_itens')
+        .insert(itemData)
+        .select()
+        .single()
+
+      if (error) return { content: [{ type: 'text' as const, text: `Erro ao adicionar item: ${error.message}` }] }
+
+      // Recalcular totais
+      const { data: todosItens } = await supabase
+        .from('notas_fiscais_itens')
+        .select('*')
+        .eq('nota_fiscal_id', params.nota_fiscal_id)
+
+      let valorProdutos = 0
+      let valorServicos = 0
+      let valorIss = 0
+
+      for (const it of (todosItens || []) as any[]) {
+        const v = it.valor_total - (it.valor_desconto || 0)
+        if (tipo === 'nfse' || it.codigo_servico) {
+          valorServicos += v
+          valorIss += it.valor_iss || 0
+        } else {
+          valorProdutos += v
+        }
+      }
+
+      const { data: notaAtual } = await supabase
+        .from('notas_fiscais')
+        .select('valor_desconto, valor_frete, valor_seguro, valor_outras_despesas')
+        .eq('id', params.nota_fiscal_id)
+        .single()
+
+      const nd = notaAtual as any || {}
+      const totalNota = valorProdutos + valorServicos - (nd.valor_desconto || 0) + (nd.valor_frete || 0) + (nd.valor_seguro || 0) + (nd.valor_outras_despesas || 0)
+
+      await supabase
+        .from('notas_fiscais')
+        .update({
+          valor_produtos: valorProdutos,
+          valor_servicos: valorServicos,
+          valor_iss: valorIss,
+          valor_total: totalNota,
+          updated_at: now,
+        })
+        .eq('id', params.nota_fiscal_id)
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, item, valor_total_nota: totalNota }) }] }
+    }
+  )
+
+  // ── Tool 7: Cancelar nota fiscal ──
+  server.tool(
+    'cancel_nota_fiscal',
+    'Cancela uma nota fiscal emitida (NFe ou NFSe). Requer justificativa com mínimo 15 caracteres.',
+    {
+      id: z.string().describe('ID da nota fiscal'),
+      justificativa: z.string().min(15).describe('Justificativa do cancelamento (mínimo 15 caracteres)'),
+    },
+    async ({ id, justificativa }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+
+      // Buscar nota
+      const { data: nota } = await supabase
+        .from('notas_fiscais')
+        .select('*')
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!nota) return { content: [{ type: 'text' as const, text: 'Nota fiscal não encontrada' }] }
+
+      const n = nota as any
+      if (n.status !== 'autorizada') {
+        return { content: [{ type: 'text' as const, text: 'Apenas notas autorizadas podem ser canceladas' }] }
+      }
+      if (!n.focus_nfe_ref) {
+        return { content: [{ type: 'text' as const, text: 'Nota sem referência Focus NFe' }] }
+      }
+
+      // Verificar prazo (24h para NFe)
+      if (n.tipo === 'nfe') {
+        const dataEmissao = new Date(n.data_emissao || n.created_at)
+        const diffHoras = (Date.now() - dataEmissao.getTime()) / (1000 * 60 * 60)
+        if (diffHoras > 24) {
+          return { content: [{ type: 'text' as const, text: 'Prazo de cancelamento expirado (máximo 24 horas após emissão)' }] }
+        }
+      }
+
+      // Buscar config fiscal
+      const { data: config } = await supabase
+        .from('fiscal_config')
+        .select('*')
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!config) return { content: [{ type: 'text' as const, text: 'Configuração fiscal não encontrada' }] }
+
+      const cfg = config as any
+      const focusToken = resolveFocusToken(cfg)
+      const focusApiUrl = resolveFocusApiUrl(cfg)
+      const now = new Date().toISOString()
+
+      try {
+        const endpoint = n.tipo === 'nfe'
+          ? `/v2/nfe/${encodeURIComponent(n.focus_nfe_ref)}`
+          : `/v2/nfse/${encodeURIComponent(n.focus_nfe_ref)}`
+
+        const response: any = await focusFetch(endpoint, {
+          method: 'DELETE',
+          token: focusToken,
+          apiUrl: focusApiUrl,
+          body: { justificativa },
+        })
+
+        let status = n.status
+        if (response.status === 'cancelado') status = 'cancelada'
+
+        await supabase
+          .from('notas_fiscais')
+          .update({
+            status,
+            cancelada: status === 'cancelada',
+            data_cancelamento: status === 'cancelada' ? now : null,
+            motivo_cancelamento: justificativa,
+            focus_nfe_status: response.status,
+            status_sefaz: response.status_sefaz || response.mensagem || null,
+            mensagem_sefaz: response.mensagem_sefaz || response.mensagem || null,
+            updated_at: now,
+          })
+          .eq('id', id)
+
+        await supabase.from('fiscal_eventos').insert({
+          organization_id: orgId,
+          nota_fiscal_id: id,
+          tipo: 'cancelamento',
+          status: response.status,
+          mensagem: response.mensagem_sefaz || response.mensagem || justificativa,
+          dados: response,
+          created_at: now,
+        })
+
+        const { data: notaAtualizada } = await supabase
+          .from('notas_fiscais')
+          .select('*')
+          .eq('id', id)
+          .single()
+
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, nota: notaAtualizada }) }] }
+      } catch (err: any) {
+        await supabase.from('fiscal_eventos').insert({
+          organization_id: orgId,
+          nota_fiscal_id: id,
+          tipo: 'erro_cancelamento',
+          status: 'erro',
+          mensagem: err.message,
+          dados: { error: err.message },
+          created_at: now,
+        })
+
+        return { content: [{ type: 'text' as const, text: `Erro ao cancelar: ${err.message}` }] }
+      }
+    }
+  )
+
+  // ── Tool 8: Carta de correção (NFe) ──
+  server.tool(
+    'send_carta_correcao',
+    'Envia carta de correção para uma NFe autorizada. Texto entre 15 e 1000 caracteres.',
+    {
+      id: z.string().describe('ID da nota fiscal (NFe)'),
+      correcao: z.string().min(15).max(1000).describe('Texto da correção (15-1000 caracteres)'),
+    },
+    async ({ id, correcao }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+
+      const { data: nota } = await supabase
+        .from('notas_fiscais')
+        .select('*')
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .eq('tipo', 'nfe')
+        .single()
+
+      if (!nota) return { content: [{ type: 'text' as const, text: 'NFe não encontrada' }] }
+
+      const n = nota as any
+      if (n.status !== 'autorizada') {
+        return { content: [{ type: 'text' as const, text: 'Carta de correção só pode ser enviada para notas autorizadas' }] }
+      }
+      if (!n.focus_nfe_ref) {
+        return { content: [{ type: 'text' as const, text: 'Nota sem referência Focus NFe' }] }
+      }
+
+      const { data: config } = await supabase
+        .from('fiscal_config')
+        .select('*')
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!config) return { content: [{ type: 'text' as const, text: 'Configuração fiscal não encontrada' }] }
+
+      const cfg = config as any
+      const focusToken = resolveFocusToken(cfg)
+      const focusApiUrl = resolveFocusApiUrl(cfg)
+      const now = new Date().toISOString()
+
+      try {
+        const response: any = await focusFetch(
+          `/v2/nfe/${encodeURIComponent(n.focus_nfe_ref)}/carta_correcao`,
+          {
+            method: 'POST',
+            token: focusToken,
+            apiUrl: focusApiUrl,
+            body: { correcao },
+          }
+        )
+
+        const updateData: Record<string, any> = { updated_at: now }
+        if (response.caminho_xml_carta_correcao) updateData.url_xml_carta_correcao = response.caminho_xml_carta_correcao
+        if (response.caminho_pdf_carta_correcao) updateData.url_pdf_carta_correcao = response.caminho_pdf_carta_correcao
+
+        await supabase.from('notas_fiscais').update(updateData).eq('id', id)
+
+        await supabase.from('fiscal_eventos').insert({
+          organization_id: orgId,
+          nota_fiscal_id: id,
+          tipo: 'carta_correcao',
+          status: response.status || 'enviado',
+          mensagem: correcao,
+          dados: response,
+          created_at: now,
+        })
+
+        const { data: notaAtualizada } = await supabase
+          .from('notas_fiscais')
+          .select('*')
+          .eq('id', id)
+          .single()
+
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, nota: notaAtualizada }) }] }
+      } catch (err: any) {
+        await supabase.from('fiscal_eventos').insert({
+          organization_id: orgId,
+          nota_fiscal_id: id,
+          tipo: 'erro_carta_correcao',
+          status: 'erro',
+          mensagem: err.message,
+          dados: { error: err.message, correcao },
+          created_at: now,
+        })
+
+        return { content: [{ type: 'text' as const, text: `Erro ao enviar carta de correção: ${err.message}` }] }
+      }
+    }
+  )
+
+  // ── Tool 9: Criar nota a partir de orçamento ──
+  server.tool(
+    'create_nota_from_orcamento',
+    'Cria uma nota fiscal (rascunho) a partir de um orçamento aprovado, importando cliente e itens.',
+    {
+      orcamento_id: z.string().describe('ID do orçamento'),
+      tipo: z.enum(['nfe', 'nfse']).describe('Tipo: nfe (produtos) ou nfse (servicos)'),
+    },
+    async ({ orcamento_id, tipo }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+
+      // Buscar orçamento com cliente
+      const { data: orcamento } = await supabase
+        .from('orcamentos')
+        .select('*, cliente:clientes(*)')
+        .eq('id', orcamento_id)
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!orcamento) return { content: [{ type: 'text' as const, text: 'Orçamento não encontrado' }] }
+
+      const orc = orcamento as any
+      if (orc.status !== 'aprovado') {
+        return { content: [{ type: 'text' as const, text: 'Apenas orçamentos aprovados podem gerar nota fiscal' }] }
+      }
+
+      // Verificar se já existe nota para este orçamento
+      const { data: notaExistente } = await supabase
+        .from('notas_fiscais')
+        .select('id, status')
+        .eq('orcamento_id', orcamento_id)
+        .eq('tipo', tipo)
+        .neq('status', 'cancelada')
+        .single()
+
+      if (notaExistente) {
+        return { content: [{ type: 'text' as const, text: `Já existe uma ${tipo.toUpperCase()} para este orçamento` }] }
+      }
+
+      // Verificar config
+      const { data: config } = await supabase
+        .from('fiscal_config')
+        .select('*')
+        .eq('organization_id', orgId)
+        .single()
+
+      if (!config) return { content: [{ type: 'text' as const, text: 'Configuração fiscal não encontrada' }] }
+
+      const cfg = config as any
+      if (tipo === 'nfe' && !cfg.nfe_habilitado) return { content: [{ type: 'text' as const, text: 'NFe não habilitada' }] }
+      if (tipo === 'nfse' && !cfg.nfse_habilitado) return { content: [{ type: 'text' as const, text: 'NFSe não habilitada' }] }
+
+      const now = new Date().toISOString()
+      const cliente = orc.cliente
+      const cpfCnpj = cliente?.cpf_cnpj?.replace(/\D/g, '') || ''
+      const destinatarioTipo = cpfCnpj.length === 14 ? 'pessoa_juridica' : 'pessoa_fisica'
+
+      const notaData: Record<string, any> = {
+        organization_id: orgId,
+        tipo,
+        status: 'rascunho',
+        cliente_id: orc.cliente_id,
+        orcamento_id,
+        destinatario_tipo: destinatarioTipo,
+        destinatario_nome: cliente?.nome || orc.cliente_nome,
+        destinatario_cpf_cnpj: cpfCnpj || '00000000000',
+        destinatario_ie: cliente?.inscricao_estadual || null,
+        destinatario_email: cliente?.email || orc.cliente_email,
+        destinatario_telefone: cliente?.telefone || cliente?.whatsapp || orc.cliente_telefone,
+        destinatario_cep: cliente?.cep || null,
+        destinatario_logradouro: cliente?.rua || null,
+        destinatario_numero: cliente?.numero || null,
+        destinatario_bairro: cliente?.bairro || null,
+        destinatario_municipio: cliente?.cidade || null,
+        destinatario_uf: cliente?.estado || null,
+        natureza_operacao: tipo === 'nfe' ? 'Venda de mercadoria' : 'Prestacao de servico',
+        finalidade: 'normal',
+        indicador_presenca: 'nao_se_aplica',
+        codigo_servico: tipo === 'nfse' ? cfg.nfse_codigo_servico : null,
+        discriminacao_servicos: tipo === 'nfse' ? orc.descricao : null,
+        local_prestacao_codigo_municipio: cfg.codigo_municipio,
+        local_prestacao_municipio: cfg.municipio,
+        local_prestacao_uf: cfg.uf,
+        iss_retido: false,
+        valor_produtos: 0,
+        valor_servicos: 0,
+        valor_desconto: orc.valor_desconto || 0,
+        valor_frete: 0,
+        valor_seguro: 0,
+        valor_outras_despesas: 0,
+        valor_total: 0,
+        valor_icms: 0,
+        valor_icms_st: 0,
+        valor_ipi: 0,
+        valor_pis: 0,
+        valor_cofins: 0,
+        valor_iss: 0,
+        valor_ir: 0,
+        valor_csll: 0,
+        valor_inss: 0,
+        created_at: now,
+        updated_at: now,
+      }
+
+      const { data: nota, error: notaError } = await supabase
+        .from('notas_fiscais')
+        .insert(notaData)
+        .select()
+        .single()
+
+      if (notaError) return { content: [{ type: 'text' as const, text: `Erro ao criar nota: ${notaError.message}` }] }
+
+      // Buscar itens do orçamento
+      const { data: itensOrcamento } = await supabase
+        .from('orcamento_itens')
+        .select('*, produto:produtos(*)')
+        .eq('orcamento_id', orcamento_id)
+        .order('ordem', { ascending: true })
+
+      if (itensOrcamento && itensOrcamento.length > 0) {
+        let numeroItem = 0
+        const itensNota = []
+
+        for (const itemOrc of itensOrcamento as any[]) {
+          numeroItem++
+          const produto = itemOrc.produto
+          const valorTotal = itemOrc.quantidade * itemOrc.valor_unitario
+          const valorDesconto = itemOrc.desconto || 0
+
+          itensNota.push({
+            nota_fiscal_id: (nota as any).id,
+            numero_item: numeroItem,
+            produto_id: itemOrc.produto_id,
+            codigo: produto?.id?.substring(0, 8) || String(numeroItem).padStart(3, '0'),
+            descricao: itemOrc.descricao,
+            ncm: produto?.ncm || null,
+            cfop: produto?.cfop_venda || (tipo === 'nfe' ? '5102' : null),
+            unidade: produto?.unidade || 'UN',
+            quantidade: itemOrc.quantidade,
+            valor_unitario: itemOrc.valor_unitario,
+            valor_total: valorTotal,
+            valor_desconto: valorDesconto,
+            valor_frete: 0,
+            icms_origem: produto?.origem || 'nacional',
+            icms_cst: tipo === 'nfe' ? '102' : null,
+            icms_base_calculo: 0,
+            icms_aliquota: 0,
+            icms_valor: 0,
+            pis_cst: '99',
+            pis_base_calculo: 0,
+            pis_aliquota: 0,
+            pis_valor: 0,
+            cofins_cst: '99',
+            cofins_base_calculo: 0,
+            cofins_aliquota: 0,
+            cofins_valor: 0,
+            codigo_servico: tipo === 'nfse' ? (produto?.codigo_servico || cfg.nfse_codigo_servico) : null,
+            aliquota_iss: tipo === 'nfse' ? (produto?.aliquota_iss || cfg.nfse_aliquota_iss || 5) : 0,
+            valor_iss: tipo === 'nfse' ? ((valorTotal - valorDesconto) * (produto?.aliquota_iss || cfg.nfse_aliquota_iss || 5)) / 100 : 0,
+            created_at: now,
+            updated_at: now,
+          })
+        }
+
+        await supabase.from('notas_fiscais_itens').insert(itensNota)
+
+        // Recalcular totais
+        let valorProdutos = 0
+        let valorServicos = 0
+        let valorIss = 0
+
+        for (const it of itensNota) {
+          const v = it.valor_total - it.valor_desconto
+          if (tipo === 'nfse' || it.codigo_servico) {
+            valorServicos += v
+            valorIss += it.valor_iss
+          } else {
+            valorProdutos += v
+          }
+        }
+
+        const totalNota = valorProdutos + valorServicos - (orc.valor_desconto || 0)
+
+        await supabase
+          .from('notas_fiscais')
+          .update({
+            valor_produtos: valorProdutos,
+            valor_servicos: valorServicos,
+            valor_iss: valorIss,
+            valor_total: totalNota,
+            updated_at: now,
+          })
+          .eq('id', (nota as any).id)
+      }
+
+      // Buscar nota final
+      const { data: notaFinal } = await supabase
+        .from('notas_fiscais')
+        .select('*')
+        .eq('id', (nota as any).id)
+        .single()
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, nota: notaFinal || nota }) }] }
+    }
+  )
+
+  // ── Tool 10: Emitir NFe (produtos) ──
   server.tool(
     'emit_nfe',
     'Emite uma NFe (Nota Fiscal Eletrônica de produtos) via Focus NFe. A nota deve estar em status "rascunho" e ter itens e destinatário preenchidos.',

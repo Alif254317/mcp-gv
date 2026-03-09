@@ -71,4 +71,120 @@ export function registerClientesTools(server: McpServer, orgId: string | null) {
       return { content: [{ type: 'text' as const, text: JSON.stringify({ found: true, cliente: data }) }] }
     }
   )
+
+  // ── Tool 3: Criar cliente ──
+  server.tool(
+    'create_cliente',
+    'Cria um novo cliente',
+    {
+      nome: z.string().describe('Nome do cliente (obrigatório)'),
+      tipo: z.enum(['pessoa_fisica', 'pessoa_juridica']).default('pessoa_fisica').describe('Tipo: pessoa_fisica ou pessoa_juridica'),
+      cpf_cnpj: z.string().optional().describe('CPF ou CNPJ'),
+      email: z.string().optional().describe('Email'),
+      telefone: z.string().optional().describe('Telefone'),
+      whatsapp: z.string().optional().describe('WhatsApp'),
+      cep: z.string().optional().describe('CEP'),
+      rua: z.string().optional().describe('Rua/Logradouro'),
+      numero: z.string().optional().describe('Número'),
+      bairro: z.string().optional().describe('Bairro'),
+      cidade: z.string().optional().describe('Cidade'),
+      estado: z.string().optional().describe('Estado (UF)'),
+      observacoes: z.string().optional().describe('Observações'),
+    },
+    async (params) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+      const { data, error } = await supabase
+        .from('clientes')
+        .insert({
+          organization_id: orgId,
+          nome: params.nome.trim(),
+          tipo: params.tipo,
+          cpf_cnpj: params.cpf_cnpj || null,
+          email: params.email || null,
+          telefone: params.telefone || null,
+          whatsapp: params.whatsapp || null,
+          cep: params.cep || null,
+          rua: params.rua || null,
+          numero: params.numero || null,
+          bairro: params.bairro || null,
+          cidade: params.cidade || null,
+          estado: params.estado || null,
+          observacoes: params.observacoes || null,
+        })
+        .select()
+        .single()
+
+      if (error) return { content: [{ type: 'text' as const, text: `Erro: ${error.message}` }] }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, cliente: data }) }] }
+    }
+  )
+
+  // ── Tool 4: Atualizar cliente ──
+  server.tool(
+    'update_cliente',
+    'Atualiza um cliente existente',
+    {
+      id: z.string().describe('ID (UUID) do cliente'),
+      nome: z.string().optional().describe('Nome'),
+      tipo: z.enum(['pessoa_fisica', 'pessoa_juridica']).optional().describe('Tipo'),
+      cpf_cnpj: z.string().optional().describe('CPF ou CNPJ'),
+      email: z.string().optional().describe('Email'),
+      telefone: z.string().optional().describe('Telefone'),
+      whatsapp: z.string().optional().describe('WhatsApp'),
+      cep: z.string().optional().describe('CEP'),
+      rua: z.string().optional().describe('Rua'),
+      numero: z.string().optional().describe('Número'),
+      bairro: z.string().optional().describe('Bairro'),
+      cidade: z.string().optional().describe('Cidade'),
+      estado: z.string().optional().describe('Estado (UF)'),
+      observacoes: z.string().optional().describe('Observações'),
+    },
+    async ({ id, ...fields }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      for (const [key, value] of Object.entries(fields)) {
+        if (value !== undefined) updates[key] = value
+      }
+
+      const supabase = getSupabase()
+      const { data, error } = await supabase
+        .from('clientes')
+        .update(updates)
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .select()
+        .single()
+
+      if (error) return { content: [{ type: 'text' as const, text: `Erro: ${error.message}` }] }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, cliente: data }) }] }
+    }
+  )
+
+  // ── Tool 5: Deletar cliente ──
+  server.tool(
+    'delete_cliente',
+    'Remove um cliente pelo ID',
+    {
+      id: z.string().describe('ID (UUID) do cliente'),
+    },
+    async ({ id }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+      const { error } = await supabase
+        .from('clientes')
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', orgId)
+
+      if (error) return { content: [{ type: 'text' as const, text: `Erro: ${error.message}` }] }
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true, deleted_id: id }) }] }
+    }
+  )
 }
