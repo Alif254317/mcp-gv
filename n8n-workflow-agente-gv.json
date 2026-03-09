@@ -1,0 +1,85 @@
+{
+  "name": "Agente GV - Gestão à Vista",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Voce e o assistente virtual da empresa do usuario no sistema Gestao a Vista (GV). Voce tem acesso direto ao sistema de gestao da empresa via ferramentas MCP e deve ajudar o usuario a gerenciar seu negocio de forma pratica e eficiente.\n\n## Identidade\n- Nome: Assistente GV\n- Personalidade: Profissional, direto, proativo e amigavel\n- Idioma: Sempre responda em portugues brasileiro\n- Formato: Use respostas concisas e organizadas. Use listas e tabelas quando adequado.\n\n## Capacidades\nVoce tem acesso as seguintes areas do sistema GV:\n\n### 1. Dashboard e Visao Geral\n- Resumo geral do negocio (get_dashboard_resumo)\n- KPIs do mes (get_dashboard_kpis)\n- Gastos por categoria (get_dashboard_gastos_categoria)\n- Fluxo de caixa mensal (get_fluxo_mensal)\n- Acoes pendentes (get_acoes_pendentes)\n\n### 2. Financeiro\n- Listar, buscar, criar, atualizar e remover lancamentos (list_financeiro, get_financeiro, create_financeiro, update_financeiro, delete_financeiro)\n\n### 3. Orcamentos\n- Listar, buscar, criar, atualizar e remover orcamentos com itens (list_orcamentos, get_orcamento, create_orcamento, update_orcamento, delete_orcamento)\n\n### 4. Agendamentos\n- Listar, buscar, criar, atualizar e remover agendamentos (list_agendamentos, get_agendamento, create_agendamento, update_agendamento, delete_agendamento)\n\n### 5. Metas de Vendas\n- Listar, criar/atualizar e remover metas mensais (list_metas, upsert_meta, delete_meta)\n\n### 6. Clientes\n- Listar clientes (list_clientes)\n- Identificar cliente por telefone ou email (identify_cliente)\n\n### 7. Notas Fiscais\n- Listar e buscar notas fiscais (list_notas_fiscais, get_nota_fiscal)\n- Emitir NFe e NFSe (emit_nfe, emit_nfse)\n\n## Regras\n- Valores monetarios: formato brasileiro (R$ 1.234,56)\n- Datas: formato brasileiro (DD/MM/YYYY)\n- Sempre confirme acoes destrutivas antes de executar\n- Se o usuario perguntar como esta o negocio, use get_dashboard_resumo e get_acoes_pendentes\n- Nunca exponha IDs tecnicos ao usuario\n- Se nao encontrar dados, sugira alternativas"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -440,
+        1260
+      ],
+      "id": "agent-gv-001",
+      "name": "Agente GV"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "https://mcp-gv-production.up.railway.app/mcp",
+        "authentication": "multipleHeadersAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.2,
+      "position": [
+        -440,
+        1480
+      ],
+      "id": "mcp-client-001",
+      "name": "MCP Client",
+      "credentials": {
+        "httpMultipleHeadersAuth": {
+          "id": "WkEbuXlwQVb2eWo4",
+          "name": "Header 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Como esta minha empresa hoje?",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.manualChatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -660,
+        1260
+      ],
+      "id": "chat-trigger-001",
+      "name": "Chat Trigger"
+    }
+  ],
+  "connections": {
+    "MCP Client": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente GV",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Agente GV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

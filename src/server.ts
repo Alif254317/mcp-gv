@@ -7,6 +7,7 @@ import { registerAgendamentosTools } from './tools/agendamentos.js'
 import { registerMetasTools } from './tools/metas.js'
 import { registerClientesTools } from './tools/clientes.js'
 import { registerFiscalTools } from './tools/fiscal.js'
+import { registerFornecedoresTools } from './tools/fornecedores.js'
 
 /**
  * Cria o McpServer com todas as tools registradas.
@@ -30,6 +31,7 @@ export async function createServer(apiKey?: string, orgIdOverride?: string): Pro
   registerMetasTools(server, orgId)
   registerClientesTools(server, orgId)
   registerFiscalTools(server, orgId)
+  registerFornecedoresTools(server, orgId)
 
   return server
 }

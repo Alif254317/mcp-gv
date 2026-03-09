@@ -138,6 +138,7 @@ export function registerFinanceiroTools(server: McpServer, orgId: string | null)
       cliente_id: z.string().optional().describe('ID do cliente associado'),
       fornecedor_id: z.string().optional().describe('ID do fornecedor associado'),
       produto_id: z.string().optional().describe('ID do produto associado'),
+      anexo_url: z.string().optional().describe('Caminho do anexo no bucket financeiro-anexos'),
     },
     async (input) => {
       if (!orgId) {
@@ -168,6 +169,7 @@ export function registerFinanceiroTools(server: McpServer, orgId: string | null)
           cliente_id: input.cliente_id || null,
           fornecedor_id: input.fornecedor_id || null,
           produto_id: input.produto_id || null,
+          anexo_url: input.anexo_url || null,
         })
         .select()
         .single()
@@ -202,6 +204,7 @@ export function registerFinanceiroTools(server: McpServer, orgId: string | null)
       cliente_id: z.string().optional().nullable().describe('ID do cliente'),
       fornecedor_id: z.string().optional().nullable().describe('ID do fornecedor'),
       produto_id: z.string().optional().nullable().describe('ID do produto'),
+      anexo_url: z.string().optional().nullable().describe('Caminho do anexo no bucket financeiro-anexos (null para remover)'),
     },
     async (input) => {
       if (!orgId) {
@@ -237,6 +240,7 @@ export function registerFinanceiroTools(server: McpServer, orgId: string | null)
       if (input.cliente_id !== undefined) payload.cliente_id = input.cliente_id
       if (input.fornecedor_id !== undefined) payload.fornecedor_id = input.fornecedor_id
       if (input.produto_id !== undefined) payload.produto_id = input.produto_id
+      if (input.anexo_url !== undefined) payload.anexo_url = input.anexo_url
 
       const { data, error } = await supabase
         .from('financeiro')
