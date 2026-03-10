@@ -122,6 +122,89 @@ export function registerClientesTools(server: McpServer, orgId: string | null) {
     }
   )
 
+  // ── Tool 3b: Cadastro em lote ──
+  server.tool(
+    'bulk_create_clientes',
+    'Cadastra multiplos clientes de uma vez (importacao em lote via CSV/Excel). Max 500 por chamada.',
+    {
+      clientes: z.array(z.object({
+        nome: z.string().describe('Nome do cliente (obrigatório)'),
+        tipo: z.enum(['pessoa_fisica', 'pessoa_juridica']).default('pessoa_fisica'),
+        cpf_cnpj: z.string().optional(),
+        email: z.string().optional(),
+        telefone: z.string().optional(),
+        whatsapp: z.string().optional(),
+        cep: z.string().optional(),
+        rua: z.string().optional(),
+        numero: z.string().optional(),
+        bairro: z.string().optional(),
+        cidade: z.string().optional(),
+        estado: z.string().optional(),
+        observacoes: z.string().optional(),
+      })).min(1).max(500).describe('Array de clientes para cadastrar'),
+    },
+    async ({ clientes }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+      const rows = clientes.map(c => ({
+        organization_id: orgId,
+        nome: c.nome.trim(),
+        tipo: c.tipo ?? 'pessoa_fisica',
+        cpf_cnpj: c.cpf_cnpj || null,
+        email: c.email || null,
+        telefone: c.telefone || null,
+        whatsapp: c.whatsapp || null,
+        cep: c.cep || null,
+        rua: c.rua || null,
+        numero: c.numero || null,
+        bairro: c.bairro || null,
+        cidade: c.cidade || null,
+        estado: c.estado || null,
+        observacoes: c.observacoes || null,
+      }))
+
+      // Insert in chunks of 100 for safety
+      const chunkSize = 100
+      let cadastrados = 0
+      const erros: { index: number; nome: string; erro: string }[] = []
+
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize)
+        const { data, error } = await supabase
+          .from('clientes')
+          .insert(chunk)
+          .select('id')
+
+        if (error) {
+          // If batch fails, try one-by-one to identify which ones fail
+          for (let j = 0; j < chunk.length; j++) {
+            const { error: singleErr } = await supabase
+              .from('clientes')
+              .insert(chunk[j])
+              .select('id')
+              .single()
+
+            if (singleErr) {
+              erros.push({ index: i + j, nome: chunk[j].nome, erro: singleErr.message })
+            } else {
+              cadastrados++
+            }
+          }
+        } else {
+          cadastrados += data?.length ?? chunk.length
+        }
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ total_enviados: clientes.length, cadastrados, erros }),
+        }],
+      }
+    }
+  )
+
   // ── Tool 4: Atualizar cliente ──
   server.tool(
     'update_cliente',

@@ -109,6 +109,81 @@ export function registerProdutosTools(server: McpServer, orgId: string | null) {
     }
   )
 
+  // ── Tool 3b: Cadastro em lote ──
+  server.tool(
+    'bulk_create_produtos',
+    'Cadastra multiplos produtos/servicos de uma vez (importacao em lote via CSV/Excel). Max 500 por chamada.',
+    {
+      produtos: z.array(z.object({
+        nome: z.string().describe('Nome do produto/servico (obrigatório)'),
+        tipo: z.enum(['produto', 'servico']).default('produto'),
+        descricao: z.string().optional(),
+        unidade: z.string().optional(),
+        preco: z.number().describe('Preco de venda (obrigatório)'),
+        custo: z.number().optional(),
+        controla_estoque: z.boolean().default(false),
+        estoque_atual: z.number().optional(),
+        estoque_minimo: z.number().optional(),
+        observacoes: z.string().optional(),
+      })).min(1).max(500).describe('Array de produtos para cadastrar'),
+    },
+    async ({ produtos }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+      const rows = produtos.map(p => ({
+        organization_id: orgId,
+        nome: p.nome.trim(),
+        tipo: p.tipo ?? 'produto',
+        descricao: p.descricao || null,
+        unidade: p.unidade || null,
+        preco: p.preco,
+        custo: p.custo ?? null,
+        controla_estoque: p.controla_estoque ?? false,
+        estoque_atual: p.estoque_atual ?? null,
+        estoque_minimo: p.estoque_minimo ?? null,
+        observacoes: p.observacoes || null,
+      }))
+
+      const chunkSize = 100
+      let cadastrados = 0
+      const erros: { index: number; nome: string; erro: string }[] = []
+
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize)
+        const { data, error } = await supabase
+          .from('produtos')
+          .insert(chunk)
+          .select('id')
+
+        if (error) {
+          for (let j = 0; j < chunk.length; j++) {
+            const { error: singleErr } = await supabase
+              .from('produtos')
+              .insert(chunk[j])
+              .select('id')
+              .single()
+
+            if (singleErr) {
+              erros.push({ index: i + j, nome: chunk[j].nome, erro: singleErr.message })
+            } else {
+              cadastrados++
+            }
+          }
+        } else {
+          cadastrados += data?.length ?? chunk.length
+        }
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ total_enviados: produtos.length, cadastrados, erros }),
+        }],
+      }
+    }
+  )
+
   // ── Tool 4: Atualizar produto ──
   server.tool(
     'update_produto',

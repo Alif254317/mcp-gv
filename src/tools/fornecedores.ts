@@ -111,6 +111,87 @@ export function registerFornecedoresTools(server: McpServer, orgId: string | nul
     }
   )
 
+  // ── Tool 3b: Cadastro em lote ──
+  server.tool(
+    'bulk_create_fornecedores',
+    'Cadastra multiplos fornecedores de uma vez (importacao em lote via CSV/Excel). Max 500 por chamada.',
+    {
+      fornecedores: z.array(z.object({
+        nome: z.string().describe('Nome do fornecedor (obrigatório)'),
+        tipo: z.enum(['pessoa_fisica', 'pessoa_juridica']).default('pessoa_juridica'),
+        cpf_cnpj: z.string().optional(),
+        email: z.string().optional(),
+        telefone: z.string().optional(),
+        whatsapp: z.string().optional(),
+        cep: z.string().optional(),
+        rua: z.string().optional(),
+        numero: z.string().optional(),
+        bairro: z.string().optional(),
+        cidade: z.string().optional(),
+        estado: z.string().optional(),
+        observacoes: z.string().optional(),
+      })).min(1).max(500).describe('Array de fornecedores para cadastrar'),
+    },
+    async ({ fornecedores }) => {
+      if (!orgId) return { content: [{ type: 'text' as const, text: 'Erro: orgId obrigatório' }] }
+
+      const supabase = getSupabase()
+      const rows = fornecedores.map(f => ({
+        organization_id: orgId,
+        nome: f.nome.trim(),
+        tipo: f.tipo ?? 'pessoa_juridica',
+        cpf_cnpj: f.cpf_cnpj || null,
+        email: f.email || null,
+        telefone: f.telefone || null,
+        whatsapp: f.whatsapp || null,
+        cep: f.cep || null,
+        rua: f.rua || null,
+        numero: f.numero || null,
+        bairro: f.bairro || null,
+        cidade: f.cidade || null,
+        estado: f.estado || null,
+        observacoes: f.observacoes || null,
+      }))
+
+      const chunkSize = 100
+      let cadastrados = 0
+      const erros: { index: number; nome: string; erro: string }[] = []
+
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize)
+        const { data, error } = await supabase
+          .from('fornecedores')
+          .insert(chunk)
+          .select('id')
+
+        if (error) {
+          for (let j = 0; j < chunk.length; j++) {
+            const { error: singleErr } = await supabase
+              .from('fornecedores')
+              .insert(chunk[j])
+              .select('id')
+              .single()
+
+            if (singleErr) {
+              erros.push({ index: i + j, nome: chunk[j].nome, erro: singleErr.message })
+            } else {
+              cadastrados++
+            }
+          }
+        } else {
+          cadastrados += data?.length ?? chunk.length
+        }
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ total_enviados: fornecedores.length, cadastrados, erros }),
+        }],
+      }
+    }
+  )
+
   // ── Tool 4: Atualizar fornecedor ──
   server.tool(
     'update_fornecedor',
